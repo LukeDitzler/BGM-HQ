@@ -179,4 +179,4 @@ Each August when a new Sleeper league is created, add the new ID here and update
 
 **"Unauthorized" locally** — make sure both Vite and Express started (you should see both in terminal output). Port 3001 may be in use — kill other processes or change the port in `server.js`.
 
-**Vercel build fails** — check build logs in Vercel dashboard. Common fixes: verify all 4 env vars are set, and set Node.js version to 18 in Vercel → Project Settings → General.
+**Vercel build fails** — check build logs in Vercel dashboard. Common fixes: verify all 4 env vars are set, and set Node.js version to 18 in Vercel → Project Settings → General.# BGM-HQ
