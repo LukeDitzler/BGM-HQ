@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -13,7 +13,7 @@ const LEAGUE_IDS = {
   2026: "1314366510466076672",
 };
 const SLEEPER_USERNAME = "LukeWickham";
-const CURRENT_YEAR = 2026;
+const CURRENT_YEAR = 2025;
 const CURRENT_LEAGUE_ID = LEAGUE_IDS[CURRENT_YEAR];
 
 // ── 2026 Rookie Draft — draft_order is confirmed and hardcoded here.
@@ -319,7 +319,6 @@ function RosterTab({ myRoster, allPlayers, fcPlayers, nflState, rosters, users }
   const [view, setView] = useState("starters");
 
   if (!myRoster || !allPlayers) return <Spinner label="Loading roster…" />;
-
 
   const starters = myRoster.starters || [];
   const allOnRoster = myRoster.players || [];
@@ -1691,9 +1690,6 @@ export default function BGMApp() {
   const [fcPlayers, setFcPlayers] = useState(null);   // FantasyCalc all-player data
   const [nflState, setNflState] = useState(null);
   const [dataLoaded, setDataLoaded] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastRefreshed, setLastRefreshed] = useState(null);
-  const [refreshKey, setRefreshKey] = useState(0);
 
   // Auth
   useEffect(() => {
@@ -1701,29 +1697,6 @@ export default function BGMApp() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => subscription.unsubscribe();
   }, []);
-
-  // Roster refresh — plain async, no useCallback to avoid stale closure issues
-  const refreshRosterData = async () => {
-    setRefreshing(true);
-    try {
-      const [ld, rs, us, ns] = await Promise.all([
-        sleeperFetch(`/league/${CURRENT_LEAGUE_ID}`, true),
-        sleeperFetch(`/league/${CURRENT_LEAGUE_ID}/rosters`, true),
-        sleeperFetch(`/league/${CURRENT_LEAGUE_ID}/users`, true),
-        sleeperFetch(`/state/nfl`, true),
-      ]);
-      setLeagueData(ld);
-      setRosters(rs);
-      setUsers(us);
-      setNflState(ns);
-      setLastRefreshed(new Date());
-      setRefreshKey(k => k + 1);  // force child remount with fresh data
-    } catch (e) {
-      console.error("Failed to load roster data:", e);
-    } finally {
-      setRefreshing(false);
-    }
-  };
 
   // Load Sleeper data once authed
   // Split into two fetches:
@@ -1850,17 +1823,7 @@ export default function BGMApp() {
         </div>
         <div>
           {session ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {lastRefreshed && (
-                <div style={{ fontSize: 9, color: C.muted, fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em" }}>
-                  synced {lastRefreshed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </div>
-              )}
-              <button onClick={refreshRosterData} disabled={refreshing} style={{ background: "transparent", border: `1px solid ${C.border}`, color: refreshing ? C.muted : C.accent, borderRadius: 4, padding: "5px 14px", fontSize: 11, fontFamily: "'DM Mono', monospace", cursor: refreshing ? "default" : "pointer", letterSpacing: "0.06em" }}>
-                {refreshing ? "Syncing…" : "↻ Sync"}
-              </button>
-              <button onClick={() => supabase.auth.signOut()} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 4, padding: "5px 14px", fontSize: 11, fontFamily: "'DM Mono', monospace", cursor: "pointer", letterSpacing: "0.06em" }}>Sign Out</button>
-            </div>
+            <button onClick={() => supabase.auth.signOut()} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 4, padding: "5px 14px", fontSize: 11, fontFamily: "'DM Mono', monospace", cursor: "pointer", letterSpacing: "0.06em" }}>Sign Out</button>
           ) : (
             <button onClick={() => setShowAuth(true)} style={{ background: C.accent, color: C.white, border: "none", borderRadius: 4, padding: "7px 18px", fontSize: 12, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>Log In</button>
           )}
@@ -1881,8 +1844,8 @@ export default function BGMApp() {
           <Spinner label="Pulling franchise data from Sleeper…" />
         ) : (
           <>
-            {tab === "home" && <HomeTab key={refreshKey} leagueData={leagueData} rosters={rosters} users={users} myRoster={myRoster} myUser={myUser} nflState={nflState} />}
-            {tab === "roster" && <RosterTab key={refreshKey} myRoster={myRoster} allPlayers={allPlayers} fcPlayers={fcPlayers} nflState={nflState} rosters={rosters} users={users} />}
+            {tab === "home" && <HomeTab leagueData={leagueData} rosters={rosters} users={users} myRoster={myRoster} myUser={myUser} nflState={nflState} />}
+            {tab === "roster" && <RosterTab myRoster={myRoster} allPlayers={allPlayers} fcPlayers={fcPlayers} nflState={nflState} rosters={rosters} users={users} />}
             {tab === "watchlist" && <WatchListTab allPlayers={allPlayers} fcPlayers={fcPlayers} myRoster={myRoster} />}
             {tab === "rookiedraft" && <RookieDraftTab allPlayers={allPlayers} myRoster={myRoster} rosters={rosters} users={users} />}
             {tab === "history" && <LeagueHistoryTab rosters={rosters} users={users} />}
