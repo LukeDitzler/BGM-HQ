@@ -488,7 +488,185 @@ function RosterTab({ myRoster, allPlayers, fcPlayers, nflState, rosters, users }
 }
 
 // ── WATCH LIST TAB ────────────────────────────────────────────────────────────
-function WatchListTab({ allPlayers, fcPlayers, myRoster }) {
+
+// ── INTERNAL ANALYSIS ────────────────────────────────────────────────────────
+function InternalAnalysis({ myRoster }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [posFilter, setPosFilter] = useState("ALL");
+  const [sortBy, setSortBy] = useState("gap");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    fetch("/trending.json", { cache: "no-store" })
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(d => { setData(d); setLoading(false); })
+      .catch(() => { setError(true); setLoading(false); });
+  }, []);
+
+  const myPlayerIds = new Set(myRoster?.players || []);
+
+  if (loading) return <Spinner label="Loading BGM Internal Analysis…" />;
+
+  if (error || !data) return (
+    <div style={{ ...card, background: C.surfaceHigh }}>
+      <SectionHeader label="Internal Analysis" />
+      <div style={{ fontSize: 12, fontFamily: "'DM Mono', monospace", color: C.muted, lineHeight: 1.8 }}>
+        <div style={{ fontWeight: 600, color: C.text, marginBottom: 8 }}>No data yet — run the analysis script to generate it.</div>
+        <div>1. Install dependencies: <span style={{ color: C.accent }}>pip install nfl_data_py pandas numpy requests</span></div>
+        <div>2. Run the script: <span style={{ color: C.accent }}>python scripts/build_trending.py</span></div>
+        <div>3. Commit <span style={{ color: C.accent }}>public/trending.json</span> and redeploy.</div>
+        <div style={{ marginTop: 12, color: C.muted }}>Schedule weekly via cron or GitHub Actions to keep fresh.</div>
+      </div>
+    </div>
+  );
+
+  const players = (data.players || [])
+    .filter(p => posFilter === "ALL" || p.position === posFilter)
+    .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      if (sortBy === "gap") return (b.bgmVsFcGap ?? -999) - (a.bgmVsFcGap ?? -999);
+      if (sortBy === "bgm") return (b.bgmScore ?? 0) - (a.bgmScore ?? 0);
+      if (sortBy === "opp") return (b.opportunityScore ?? 0) - (a.opportunityScore ?? 0);
+      if (sortBy === "traj") return (b.trajectoryScore ?? 0) - (a.trajectoryScore ?? 0);
+      if (sortBy === "org") return (b.orgScore ?? 0) - (a.orgScore ?? 0);
+      return 0;
+    });
+
+  const ScoreBar = ({ value, max = 100, color }) => (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+      <div style={{ width: 40, height: 4, background: C.border, borderRadius: 2, overflow: "hidden" }}>
+        <div style={{ width: `${Math.min(100, (value / max) * 100)}%`, height: "100%", background: color || C.accent, borderRadius: 2 }} />
+      </div>
+      <span style={{ fontSize: 11, color: color || C.accent, fontWeight: 600 }}>{Math.round(value)}</span>
+    </div>
+  );
+
+  const GapBadge = ({ gap }) => {
+    if (gap == null) return <span style={{ color: C.muted }}>—</span>;
+    const color = gap > 10 ? C.green : gap < -10 ? C.red : C.muted;
+    return <span style={{ color, fontWeight: 700, fontSize: 12 }}>{gap > 0 ? `+${gap.toFixed(0)}` : gap.toFixed(0)}</span>;
+  };
+
+  const inp = { padding: "8px 12px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 4, color: C.text, fontSize: 12, fontFamily: "'DM Mono', monospace", outline: "none" };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Methodology card */}
+      <div style={{ ...card, background: C.surfaceHigh, borderColor: C.accentDim, padding: "14px 18px" }}>
+        <div style={{ fontSize: 10, fontFamily: "'DM Mono', monospace", color: C.accent, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>BGM Trending Score Methodology</div>
+        <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+          {[
+            ["Opportunity", "35%", "Target share, air yards share, snap %, WOPR — by position"],
+            ["Trajectory", "25%", "Year-over-year opportunity metric delta"],
+            ["Org Commitment", "25%", "Draft capital × contract value × depth chart order"],
+            ["Age", "15%", "(32 − age) × positional longevity multiplier"],
+          ].map(([label, pct, desc]) => (
+            <div key={label} style={{ fontSize: 10, fontFamily: "'DM Mono', monospace" }}>
+              <span style={{ color: C.text, fontWeight: 700 }}>{label}</span>
+              <span style={{ color: C.accent, fontWeight: 700 }}> {pct}</span>
+              <span style={{ color: C.muted }}> — {desc}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 8, fontSize: 10, color: C.muted, fontFamily: "'DM Mono', monospace" }}>
+          Generated: {new Date(data.generated).toLocaleDateString()} · {data.playerCount} players · Seasons: {data.seasons?.join(", ")}
+          {" · "}<span style={{ color: C.accent }}>Gap = BGM score minus FC normalized rank. Positive = BGM sees more value than market.</span>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search player…" style={{ ...inp, width: 160 }} />
+        <div style={{ display: "flex", gap: 4 }}>
+          {["ALL", "QB", "RB", "WR", "TE"].map(p => (
+            <button key={p} onClick={() => setPosFilter(p)} style={{
+              background: posFilter === p ? C.accentLight : "transparent",
+              color: posFilter === p ? C.accent : C.muted,
+              border: `1px solid ${posFilter === p ? C.accent : C.border}`,
+              borderRadius: 3, fontSize: 10, fontWeight: 700, padding: "5px 9px",
+              cursor: "pointer", fontFamily: "'DM Mono', monospace",
+            }}>{p}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 4, marginLeft: "auto", alignItems: "center" }}>
+          <div style={{ fontSize: 10, color: C.muted, fontFamily: "'DM Mono', monospace", marginRight: 4 }}>Sort:</div>
+          {[["gap", "BGM Gap"], ["bgm", "BGM Score"], ["opp", "Opportunity"], ["traj", "Trajectory"], ["org", "Org Commit"]].map(([k, label]) => (
+            <button key={k} onClick={() => setSortBy(k)} style={{
+              background: sortBy === k ? C.accentLight : "transparent",
+              color: sortBy === k ? C.accent : C.muted,
+              border: `1px solid ${sortBy === k ? C.accent : C.border}`,
+              borderRadius: 3, fontSize: 10, fontWeight: 700, padding: "5px 9px",
+              cursor: "pointer", fontFamily: "'DM Mono', monospace",
+            }}>{label}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 10, fontFamily: "'DM Mono', monospace", color: C.muted }}>
+          <span style={{ color: C.green, fontWeight: 700 }}>Positive gap</span> — BGM sees more value than FC market → potential buy
+        </div>
+        <div style={{ fontSize: 10, fontFamily: "'DM Mono', monospace", color: C.muted }}>
+          <span style={{ color: C.red, fontWeight: 700 }}>Negative gap</span> — FC market values higher than BGM → potential sell/fade
+        </div>
+        <div style={{ fontSize: 10, fontFamily: "'DM Mono', monospace", color: C.muted }}>
+          <span style={{ color: C.accent, fontWeight: 700 }}>ROSTER</span> badge = on your current team
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={{ ...card, padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'DM Mono', monospace", fontSize: 12 }}>
+          <thead>
+            <tr style={{ borderBottom: `1px solid ${C.border}`, background: C.surfaceHigh }}>
+              {["BGM #", "Pos", "Player", "Team", "Gap", "BGM Score", "Opportunity", "Trajectory", "Org Commit", "Age", "Snap%", "Tgt%", "AirYds%", "FC Rank"].map(h => (
+                <th key={h} style={{ padding: "9px 12px", color: C.muted, fontWeight: 600, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.07em", textAlign: h === "Player" || h === "Team" ? "left" : "right", whiteSpace: "nowrap" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {players.map((p, i) => {
+              const onRoster = myPlayerIds.has(p.playerId);
+              return (
+                <tr key={p.playerId}
+                  style={{ borderBottom: `1px solid ${C.border}`, background: onRoster ? `${C.accent}08` : "transparent", transition: "background 0.1s" }}
+                  onMouseEnter={e => e.currentTarget.style.background = C.surfaceHigh}
+                  onMouseLeave={e => e.currentTarget.style.background = onRoster ? `${C.accent}08` : "transparent"}>
+                  <td style={{ padding: "9px 12px", textAlign: "right" }}>
+                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 800, color: C.accent }}>#{p.bgmRank}</span>
+                  </td>
+                  <td style={{ padding: "9px 12px" }}><span style={{ ...badge(posColor(p.position)) }}>{p.position}</span></td>
+                  <td style={{ padding: "9px 12px", color: C.text, fontWeight: 600, whiteSpace: "nowrap" }}>
+                    {p.name}
+                    {onRoster && <span style={{ ...badge(C.accent), marginLeft: 6, fontSize: 9 }}>ROSTER</span>}
+                  </td>
+                  <td style={{ padding: "9px 12px", color: C.muted }}>{p.team}</td>
+                  <td style={{ padding: "9px 12px", textAlign: "right" }}><GapBadge gap={p.bgmVsFcGap} /></td>
+                  <td style={{ padding: "9px 12px", textAlign: "right" }}><ScoreBar value={p.bgmScore} color={C.accent} /></td>
+                  <td style={{ padding: "9px 12px", textAlign: "right" }}><ScoreBar value={p.opportunityScore} color={C.blue} /></td>
+                  <td style={{ padding: "9px 12px", textAlign: "right" }}>
+                    <ScoreBar value={p.trajectoryScore} color={p.trajectoryScore > 60 ? C.green : p.trajectoryScore < 40 ? C.red : C.muted} />
+                  </td>
+                  <td style={{ padding: "9px 12px", textAlign: "right" }}><ScoreBar value={p.orgScore} color="#7c5cbf" /></td>
+                  <td style={{ padding: "9px 12px", textAlign: "right" }}><ScoreBar value={p.ageScore} color={p.ageScore > 70 ? C.green : p.ageScore > 40 ? C.accent : C.red} /></td>
+                  <td style={{ padding: "9px 12px", color: C.mutedLight, textAlign: "right" }}>{p.snapSharePct != null ? `${p.snapSharePct}%` : "—"}</td>
+                  <td style={{ padding: "9px 12px", color: C.mutedLight, textAlign: "right" }}>{p.targetSharePct != null ? `${p.targetSharePct}%` : "—"}</td>
+                  <td style={{ padding: "9px 12px", color: C.mutedLight, textAlign: "right" }}>{p.airYardsSharePct != null ? `${p.airYardsSharePct}%` : "—"}</td>
+                  <td style={{ padding: "9px 12px", color: C.muted, textAlign: "right" }}>{p.fcOverallRank ? `#${p.fcOverallRank}` : "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function FrontOfficeTab({ allPlayers, fcPlayers, myRoster }) {
   const [watchList, setWatchList] = useState(() => {
     try { return JSON.parse(localStorage.getItem("bgm_watchlist") || "[]"); } catch { return []; }
   });
@@ -542,7 +720,7 @@ function WatchListTab({ allPlayers, fcPlayers, myRoster }) {
   // Build FC player list for the full player table
   const [wlPosFilter, setWlPosFilter] = useState("ALL");
   const [wlSearch, setWlSearch] = useState("");
-  const [wlView, setWlView] = useState("players"); // "players" | "watchlist"
+  const [wlView, setWlView] = useState("analysis"); // "analysis" | "players" | "watchlist"
 
   const fcPlayerList = Object.entries(fcPlayers || {}).map(([sleeperId, fc]) => ({
     sleeperId,
@@ -574,9 +752,13 @@ function WatchListTab({ allPlayers, fcPlayers, myRoster }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* View toggle */}
+      {/* View toggle — three tabs */}
       <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${C.border}` }}>
-        {[{ id: "players", label: `All Players (${fcPlayerList.length})` }, { id: "watchlist", label: `My Watch List (${watchList.length})` }].map(v => (
+        {[
+          { id: "analysis", label: "Internal Analysis" },
+          { id: "players", label: `FC Rankings (${fcPlayerList.length})` },
+          { id: "watchlist", label: `Watch List (${watchList.length})` },
+        ].map(v => (
           <button key={v.id} onClick={() => setWlView(v.id)} style={{
             background: "transparent", border: "none",
             borderBottom: `2px solid ${wlView === v.id ? C.accent : "transparent"}`,
@@ -587,6 +769,10 @@ function WatchListTab({ allPlayers, fcPlayers, myRoster }) {
           }}>{v.label}</button>
         ))}
       </div>
+
+      {wlView === "analysis" && (
+        <InternalAnalysis myRoster={myRoster} />
+      )}
 
       {wlView === "players" && (
         <>
@@ -666,7 +852,7 @@ function WatchListTab({ allPlayers, fcPlayers, myRoster }) {
       )}
 
       {wlView === "watchlist" && (
-        <>
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
       {/* Filter pills */}
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -695,7 +881,7 @@ function WatchListTab({ allPlayers, fcPlayers, myRoster }) {
           ))}
         </div>
       )}
-        </>
+        </div>
       )}
     </div>
   );
@@ -1790,7 +1976,7 @@ export default function BGMApp() {
   const tabs = [
     { id: "home", label: "Home" },
     { id: "roster", label: "Roster" },
-    { id: "watchlist", label: "Watch List" },
+    { id: "watchlist", label: "Front Office" },
     { id: "rookiedraft", label: "Rookie Draft" },
     { id: "history", label: "League History" },
   ];
@@ -1883,7 +2069,7 @@ export default function BGMApp() {
           <>
             {tab === "home" && <HomeTab key={refreshKey} leagueData={leagueData} rosters={rosters} users={users} myRoster={myRoster} myUser={myUser} nflState={nflState} />}
             {tab === "roster" && <RosterTab key={refreshKey} myRoster={myRoster} allPlayers={allPlayers} fcPlayers={fcPlayers} nflState={nflState} rosters={rosters} users={users} />}
-            {tab === "watchlist" && <WatchListTab allPlayers={allPlayers} fcPlayers={fcPlayers} myRoster={myRoster} />}
+            {tab === "watchlist" && <FrontOfficeTab allPlayers={allPlayers} fcPlayers={fcPlayers} myRoster={myRoster} />}
             {tab === "rookiedraft" && <RookieDraftTab allPlayers={allPlayers} myRoster={myRoster} rosters={rosters} users={users} />}
             {tab === "history" && <LeagueHistoryTab rosters={rosters} users={users} />}
           </>
