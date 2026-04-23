@@ -8,6 +8,7 @@
     { "src": "/api/(.*)", "dest": "/server.js" },
     { "src": "/trending.json", "dest": "/trending.json" },
     { "src": "/fc_history.json", "dest": "/fc_history.json" },
+    { "src": "/BGM_Logo.png", "dest": "/BGM_Logo.png" },
     { "src": "/(.*)", "dest": "/dist/index.html" }
   ]
 }
