@@ -499,19 +499,23 @@ function InternalAnalysis({ myRoster }) {
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    fetch("/trending.json", { cache: "no-store" })
-      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    // Cache bust with timestamp so Vercel CDN always serves latest file
+    fetch(`/trending.json?v=${Date.now()}`)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then(d => { setData(d); setLoading(false); })
-      .catch(() => { setError(true); setLoading(false); });
+      .catch(e => { console.error("trending.json fetch failed:", e); setError(true); setLoading(false); });
   }, []);
 
   const myPlayerIds = new Set(myRoster?.players || []);
 
-  if (loading) return <Spinner label="Loading BGM Internal Analysis…" />;
+  if (loading) return <Spinner label="Loading BGM Internal Rankings…" />;
 
   if (error || !data) return (
     <div style={{ ...card, background: C.surfaceHigh }}>
-      <SectionHeader label="Internal Analysis" />
+      <SectionHeader label="Internal Rankings" />
       <div style={{ fontSize: 12, fontFamily: "'DM Mono', monospace", color: C.muted, lineHeight: 1.8 }}>
         <div style={{ fontWeight: 600, color: C.text, marginBottom: 8 }}>No data yet — run the analysis script to generate it.</div>
         <div>1. Install dependencies: <span style={{ color: C.accent }}>pip install nfl_data_py pandas numpy requests</span></div>
@@ -755,7 +759,7 @@ function FrontOfficeTab({ allPlayers, fcPlayers, myRoster }) {
       {/* View toggle — three tabs */}
       <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${C.border}` }}>
         {[
-          { id: "analysis", label: "Internal Analysis" },
+          { id: "analysis", label: "Internal Rankings" },
           { id: "players", label: `FC Rankings (${fcPlayerList.length})` },
           { id: "watchlist", label: `Watch List (${watchList.length})` },
         ].map(v => (

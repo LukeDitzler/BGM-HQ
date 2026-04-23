@@ -33,6 +33,18 @@ except ImportError:
     print("  Continuing without roster/draft/contract enrichment.")
 
 SEASONS = [2023, 2024, 2025]
+
+def sanitize(obj):
+    """Recursively replace NaN/Inf with None so json.dump produces valid JSON."""
+    if isinstance(obj, dict):
+        return {k: sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize(v) for v in obj]
+    if isinstance(obj, float):
+        if obj != obj or obj == float('inf') or obj == float('-inf'):  # NaN or Inf check
+            return None
+        return obj
+    return obj
 POSITIONS = ["QB", "WR", "RB", "TE"]
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -532,7 +544,7 @@ def main():
         "players": records,
     }
     with open(TRENDING_PATH, "w") as f:
-        json.dump(output, f)
+        json.dump(sanitize(output), f)
 
     print(f"\n✓ {len(records)} players → {TRENDING_PATH}")
     print(f"✓ FC history: {len(fc_history)} snapshots")
