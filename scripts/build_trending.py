@@ -35,15 +35,27 @@ except ImportError:
 SEASONS = [2023, 2024, 2025]
 
 def sanitize(obj):
-    """Recursively replace NaN/Inf with None so json.dump produces valid JSON."""
+    """Recursively replace NaN/Inf with None so json.dump produces valid JSON.
+    Handles Python floats, numpy floats (float32/float64), and numpy integers.
+    """
     if isinstance(obj, dict):
         return {k: sanitize(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [sanitize(v) for v in obj]
-    if isinstance(obj, float):
-        if obj != obj or obj == float('inf') or obj == float('-inf'):  # NaN or Inf check
+    # numpy floats inherit from float but also catch via numpy check
+    if isinstance(obj, float) or (hasattr(np, 'floating') and isinstance(obj, np.floating)):
+        try:
+            if obj != obj or obj == float('inf') or obj == float('-inf'):
+                return None
+            return float(obj)
+        except Exception:
             return None
-        return obj
+    # numpy integers -> plain int
+    if hasattr(np, 'integer') and isinstance(obj, np.integer):
+        return int(obj)
+    # numpy bool -> plain bool
+    if hasattr(np, 'bool_') and isinstance(obj, np.bool_):
+        return bool(obj)
     return obj
 POSITIONS = ["QB", "WR", "RB", "TE"]
 

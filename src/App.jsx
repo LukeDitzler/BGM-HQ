@@ -2008,9 +2008,9 @@ export default function BGMApp() {
         style={{
           position: "fixed", top: "50%", left: "50%",
           transform: "translate(-50%, -50%)",
-          width: "65vw", maxWidth: 680,
+          width: "80vw",
           pointerEvents: "none", zIndex: 0,
-          opacity: 0.07,
+          opacity: 0.15,
           mixBlendMode: "multiply",
           userSelect: "none",
         }}
